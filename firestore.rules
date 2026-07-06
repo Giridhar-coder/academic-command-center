@@ -1,0 +1,206 @@
+rules_version = '2';
+service cloud firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validations
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['name', 'college', 'major', 'gpaGoal', 'dailyCalorieGoal', 'dailyWaterGoal', 'waterIntake', 'budget'])
+        && (data.keys().size() == 8 || (data.keys().size() == 9 && data.keys().hasAll(['updatedAt'])))
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.college is string && data.college.size() > 0 && data.college.size() <= 200
+        && data.major is string && data.major.size() > 0 && data.major.size() <= 100
+        && data.gpaGoal is number && data.gpaGoal >= 0.0 && data.gpaGoal <= 5.0
+        && data.dailyCalorieGoal is number && data.dailyCalorieGoal >= 0 && data.dailyCalorieGoal <= 10000
+        && data.dailyWaterGoal is number && data.dailyWaterGoal >= 0 && data.dailyWaterGoal <= 20000
+        && data.waterIntake is number && data.waterIntake >= 0 && data.waterIntake <= 20000
+        && data.budget is map
+        && data.budget.keys().hasAll(['allowance']) && data.budget.keys().size() == 1
+        && data.budget.allowance is number && data.budget.allowance >= 0;
+    }
+
+    function isValidGoal(data) {
+      return data.keys().hasAll(['id', 'title', 'category', 'targetDate', 'completed'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.category is string && (data.category == 'academic' || data.category == 'fitness' || data.category == 'financial' || data.category == 'personal')
+        && data.targetDate is string && data.targetDate.size() <= 50
+        && data.completed is bool;
+    }
+
+    function isValidExam(data) {
+      return data.keys().hasAll(['id', 'course', 'title', 'date', 'preparationStatus'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.course is string && data.course.size() > 0 && data.course.size() <= 100
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.date is string && data.date.size() <= 50
+        && data.preparationStatus is string && (data.preparationStatus == 'not_started' || data.preparationStatus == 'studying' || data.preparationStatus == 'ready');
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['id', 'title', 'amount', 'category', 'date'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.amount is number && data.amount >= 0
+        && data.category is string && (data.category == 'food' || data.category == 'books' || data.category == 'transit' || data.category == 'fun' || data.category == 'other')
+        && data.date is string && data.date.size() <= 50;
+    }
+
+    function isValidWorkout(data) {
+      return data.keys().hasAll(['id', 'title', 'completed', 'category', 'date'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.completed is bool
+        && data.category is string && (data.category == 'strength' || data.category == 'cardio' || data.category == 'yoga' || data.category == 'other')
+        && data.date is string && data.date.size() <= 50;
+    }
+
+    function isValidMeal(data) {
+      return data.keys().hasAll(['id', 'name', 'calories', 'type'])
+        && data.keys().size() == 4
+        && isValidId(data.id)
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.calories is number && data.calories >= 0
+        && data.type is string && (data.type == 'breakfast' || data.type == 'lunch' || data.type == 'dinner' || data.type == 'snack');
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'dueDate', 'tasks'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 1000
+        && data.dueDate is string && data.dueDate.size() <= 50
+        && data.tasks is list && data.tasks.size() <= 50;
+    }
+
+    function isValidCalendarEvent(data) {
+      return data.keys().hasAll(['id', 'title', 'startTime', 'endTime', 'day', 'type'])
+        && data.keys().size() == 6
+        && isValidId(data.id)
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.startTime is string && data.startTime.size() <= 10
+        && data.endTime is string && data.endTime.size() <= 10
+        && data.day is string && (data.day == 'Monday' || data.day == 'Tuesday' || data.day == 'Wednesday' || data.day == 'Thursday' || data.day == 'Friday' || data.day == 'Saturday' || data.day == 'Sunday')
+        && data.type is string && (data.type == 'class' || data.type == 'study' || data.type == 'social' || data.type == 'personal');
+    }
+
+    function isValidEmailMessage(data) {
+      return data.keys().hasAll(['id', 'sender', 'subject', 'snippet', 'date', 'unread'])
+        && data.keys().size() == 6
+        && isValidId(data.id)
+        && data.sender is string && data.sender.size() <= 200
+        && data.subject is string && data.subject.size() <= 200
+        && data.snippet is string && data.snippet.size() <= 1000
+        && data.date is string && data.date.size() <= 50
+        && data.unread is bool;
+    }
+
+    // Temporal rule or other is not required since size is validated
+    function isValidAttachedFile(data) {
+      return data.keys().hasAll(['id', 'name', 'size', 'type', 'contentSnippet'])
+        && data.keys().size() == 5
+        && isValidId(data.id)
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.size is string && data.size.size() <= 50
+        && data.type is string && data.type.size() <= 50
+        && data.contentSnippet is string && data.contentSnippet.size() <= 100000;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['id', 'sender', 'text', 'timestamp'])
+        && (data.keys().size() == 4 || (data.keys().size() == 5 && data.keys().hasAll(['createdAt'])))
+        && isValidId(data.id)
+        && data.sender is string && (data.sender == 'user' || data.sender == 'jarvis')
+        && data.text is string && data.text.size() <= 50000
+        && data.timestamp is string && data.timestamp.size() <= 50;
+    }
+
+    // Rules matching collections
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidUserProfile(incoming());
+
+      match /goals/{goalId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidGoal(incoming());
+      }
+
+      match /exams/{examId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidExam(incoming());
+      }
+
+      match /expenses/{expenseId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidExpense(incoming());
+      }
+
+      match /workouts/{workoutId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidWorkout(incoming());
+      }
+
+      match /meals/{mealId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidMeal(incoming());
+      }
+
+      match /projects/{projectId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidProject(incoming());
+      }
+
+      match /calendar/{eventId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidCalendarEvent(incoming());
+      }
+
+      match /emails/{emailId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidEmailMessage(incoming());
+      }
+
+      match /files/{fileId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidAttachedFile(incoming());
+      }
+
+      match /chatHistory/{messageId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidChatMessage(incoming());
+      }
+    }
+  }
+}

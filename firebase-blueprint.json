@@ -1,0 +1,216 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile configuration and metrics for student life",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Display name of the user" },
+        "college": { "type": "string", "description": "College or university name" },
+        "major": { "type": "string", "description": "Primary major or branch of study" },
+        "gpaGoal": { "type": "number", "description": "Target GPA" },
+        "dailyCalorieGoal": { "type": "number", "description": "Target daily food calories" },
+        "dailyWaterGoal": { "type": "number", "description": "Daily target hydration in milliliters" },
+        "waterIntake": { "type": "number", "description": "Current water consumed today in milliliters" },
+        "budget": {
+          "type": "object",
+          "description": "Financial allowance limits",
+          "properties": {
+            "allowance": { "type": "number", "description": "Monthly or weekly spend allowance" }
+          },
+          "required": ["allowance"]
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "college", "major", "gpaGoal", "dailyCalorieGoal", "dailyWaterGoal", "waterIntake", "budget"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "A specific student target goal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["academic", "fitness", "financial", "personal"] },
+        "targetDate": { "type": "string" },
+        "completed": { "type": "boolean" }
+      },
+      "required": ["id", "title", "category", "targetDate", "completed"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "An upcoming exam or test",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "course": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "preparationStatus": { "type": "string", "enum": ["not_started", "studying", "ready"] }
+      },
+      "required": ["id", "course", "title", "date", "preparationStatus"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "A record of an expense transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string", "enum": ["food", "books", "transit", "fun", "other"] },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "amount", "category", "date"]
+    },
+    "Workout": {
+      "title": "Workout",
+      "description": "A gym or workout routine entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "category": { "type": "string", "enum": ["strength", "cardio", "yoga", "other"] },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "title", "completed", "category", "date"]
+    },
+    "Meal": {
+      "title": "Meal",
+      "description": "A dietary intake log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "calories": { "type": "number" },
+        "type": { "type": "string", "enum": ["breakfast", "lunch", "dinner", "snack"] }
+      },
+      "required": ["id", "name", "calories", "type"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "An ongoing class or laboratory project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "completed": { "type": "boolean" }
+            },
+            "required": ["id", "title", "completed"]
+          }
+        }
+      },
+      "required": ["id", "title", "description", "dueDate", "tasks"]
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "A scheduled weekly event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "day": { "type": "string", "enum": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] },
+        "type": { "type": "string", "enum": ["class", "study", "social", "personal"] }
+      },
+      "required": ["id", "title", "startTime", "endTime", "day", "type"]
+    },
+    "EmailMessage": {
+      "title": "EmailMessage",
+      "description": "An email simulation item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sender": { "type": "string" },
+        "subject": { "type": "string" },
+        "snippet": { "type": "string" },
+        "date": { "type": "string" },
+        "unread": { "type": "boolean" }
+      },
+      "required": ["id", "sender", "subject", "snippet", "date", "unread"]
+    },
+    "AttachedFile": {
+      "title": "AttachedFile",
+      "description": "An indexed document for AI Jarvis memory context",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "string" },
+        "type": { "type": "string" },
+        "contentSnippet": { "type": "string" }
+      },
+      "required": ["id", "name", "size", "type", "contentSnippet"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A chat interaction message with Jarvis AI",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "jarvis"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sender", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile details"
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/Goal" },
+      "description": "Goals for a given user"
+    },
+    "/users/{userId}/exams/{examId}": {
+      "schema": { "$ref": "#/entities/Exam" },
+      "description": "Upcoming exam schedules"
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Financial expenses ledger items"
+    },
+    "/users/{userId}/workouts/{workoutId}": {
+      "schema": { "$ref": "#/entities/Workout" },
+      "description": "Exercise routine records"
+    },
+    "/users/{userId}/meals/{mealId}": {
+      "schema": { "$ref": "#/entities/Meal" },
+      "description": "Dietary meal tracking logs"
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Ongoing academic or lab projects"
+    },
+    "/users/{userId}/calendar/{eventId}": {
+      "schema": { "$ref": "#/entities/CalendarEvent" },
+      "description": "Weekly class schedule blocks"
+    },
+    "/users/{userId}/emails/{emailId}": {
+      "schema": { "$ref": "#/entities/EmailMessage" },
+      "description": "Inbox email messages"
+    },
+    "/users/{userId}/files/{fileId}": {
+      "schema": { "$ref": "#/entities/AttachedFile" },
+      "description": "Indexed course files for RAG search"
+    },
+    "/users/{userId}/chatHistory/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Chat log history with Jarvis"
+    }
+  }
+}

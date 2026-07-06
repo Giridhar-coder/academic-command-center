@@ -1,0 +1,6 @@
+{
+  "name": "AI Life OS",
+  "description": "The ultimate full-stack assistant for college students. Tracks schedules, exams, goals, gym, diet, finances, and files, all brought together by a personal Jarvis AI assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
