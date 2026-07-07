@@ -36,6 +36,19 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  if (error instanceof Error) {
+    try {
+      const parsed = JSON.parse(error.message);
+      if (parsed && typeof parsed === 'object' && 'operationType' in parsed && 'path' in parsed) {
+        throw error;
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === error.message) {
+        throw e;
+      }
+    }
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
