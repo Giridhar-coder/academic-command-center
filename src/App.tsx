@@ -310,7 +310,7 @@ export default function App() {
   // Authentication page (if not signed in)
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center font-sans selection:bg-indigo-500/30 selection:text-white relative overflow-hidden px-4">
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center font-sans selection:bg-indigo-500/30 selection:text-white relative overflow-y-auto py-12 px-4">
         
         {/* Background Mesh Gradients */}
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/15 rounded-full blur-[120px] pointer-events-none"></div>
@@ -364,7 +364,7 @@ export default function App() {
                 </p>
 
                 {dbError.toLowerCase().includes('unauthorized-domain') && (
-                  <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 space-y-2 font-sans">
+                  <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 space-y-3 font-sans">
                     <p className="font-semibold text-amber-400 flex items-center gap-1.5">
                       <span>💡</span> Domain Authorization Required
                     </p>
@@ -376,10 +376,16 @@ export default function App() {
                       <li>Go to <strong>Authentication &gt; Settings &gt; Authorized domains</strong></li>
                       <li>Add this domain: <code className="bg-slate-950 px-1 py-0.5 rounded text-[10px] text-amber-400 border border-white/5 font-mono break-all">{window.location.hostname}</code></li>
                     </ol>
-                    <div className="h-[1px] bg-white/5 my-2"></div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Alternatively, click the <strong>Local Offline Sandbox</strong> button below to run the system immediately using your container's local storage database.
+                    <div className="h-[1px] bg-white/5 my-1"></div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                      Or bypass immediately to run offline inside the container sandbox:
                     </p>
+                    <button
+                      onClick={handleLocalSandbox}
+                      className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs transition-all active:scale-[0.98] cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      🚀 Bypass & Enter Local Sandbox
+                    </button>
                   </div>
                 )}
               </div>
