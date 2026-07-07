@@ -22,7 +22,8 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   GoogleAuthProvider, 
-  signOut 
+  signOut,
+  signInAnonymously
 } from 'firebase/auth';
 
 import { doc, setDoc } from 'firebase/firestore';
@@ -53,8 +54,8 @@ export default function App() {
   // Load and sync authenticated user state on mount / auth change
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
         setIsSyncing(true);
         setDbError(null);
         try {
@@ -64,14 +65,14 @@ export default function App() {
             setChatHistory(loadedState.chatHistory || []);
           } else {
             // First time login, initialize template records in Firestore
-            await initializeNewUser(currentUser.uid, currentUser.displayName || '');
+            await initializeNewUser(currentUser.uid, currentUser.displayName || 'Guest Pilot');
             
             // Adjust local state with the user's name
             const freshState = {
               ...DEFAULT_STATE,
               profile: {
                 ...DEFAULT_STATE.profile,
-                name: currentUser.displayName || DEFAULT_STATE.profile.name
+                name: currentUser.displayName || 'Guest Pilot'
               }
             };
             setState(freshState);
@@ -85,8 +86,14 @@ export default function App() {
           setAuthLoading(false);
         }
       } else {
-        setState(DEFAULT_STATE);
-        setChatHistory(DEFAULT_STATE.chatHistory);
+        setUser((prev: any) => {
+          if (prev && prev.uid === 'local_guest_sandbox') {
+            return prev;
+          }
+          setState(DEFAULT_STATE);
+          setChatHistory(DEFAULT_STATE.chatHistory);
+          return null;
+        });
         setAuthLoading(false);
       }
     });
@@ -108,10 +115,42 @@ export default function App() {
     }
   };
 
+  // Anonymous Sign In Handler
+  const handleAnonymousSignIn = async () => {
+    setAuthLoading(true);
+    setDbError(null);
+    try {
+      await signInAnonymously(auth);
+    } catch (err: any) {
+      console.error('Anonymous Sign In Error:', err);
+      setDbError('Anonymous auth failed: ' + (err.message || String(err)));
+      setAuthLoading(false);
+    }
+  };
+
+  // Local Sandbox / Guest Mode (No Firebase Auth Required)
+  const handleLocalSandbox = () => {
+    setAuthLoading(true);
+    setDbError(null);
+    setUser({
+      uid: 'local_guest_sandbox',
+      displayName: 'Sandbox Pilot',
+      email: 'sandbox@ailife.os',
+      isAnonymous: true,
+      photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+    });
+    setState(DEFAULT_STATE);
+    setChatHistory(DEFAULT_STATE.chatHistory);
+    setAuthLoading(false);
+  };
+
   // Logout Handler
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+      setUser(null);
+      setState(DEFAULT_STATE);
+      setChatHistory(DEFAULT_STATE.chatHistory);
       setActiveTab('dashboard');
     } catch (err: any) {
       console.error('Sign Out Error:', err);
@@ -125,7 +164,7 @@ export default function App() {
     setIsSyncing(true);
     setDbError(null);
 
-    if (user) {
+    if (user && user.uid !== 'local_guest_sandbox') {
       try {
         const uid = user.uid;
 
@@ -319,20 +358,67 @@ export default function App() {
             </div>
 
             {dbError && (
-              <p className="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 w-full text-center">
-                {dbError}
-              </p>
+              <div className="w-full space-y-2">
+                <p className="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 w-full text-center font-mono">
+                  {dbError}
+                </p>
+
+                {dbError.toLowerCase().includes('unauthorized-domain') && (
+                  <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 space-y-2 font-sans">
+                    <p className="font-semibold text-amber-400 flex items-center gap-1.5">
+                      <span>💡</span> Domain Authorization Required
+                    </p>
+                    <p className="leading-relaxed text-slate-300">
+                      Your current preview domain is not whitelisted in your Firebase project. To fix this permanently in Firebase:
+                    </p>
+                    <ol className="list-decimal pl-4 space-y-1 text-[11px] text-amber-200/80">
+                      <li>Go to the <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="underline font-semibold text-cyan-400 hover:text-cyan-300">Firebase Console</a></li>
+                      <li>Go to <strong>Authentication &gt; Settings &gt; Authorized domains</strong></li>
+                      <li>Add this domain: <code className="bg-slate-950 px-1 py-0.5 rounded text-[10px] text-amber-400 border border-white/5 font-mono break-all">{window.location.hostname}</code></li>
+                    </ol>
+                    <div className="h-[1px] bg-white/5 my-2"></div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Alternatively, click the <strong>Local Offline Sandbox</strong> button below to run the system immediately using your container's local storage database.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
-            <button
-              onClick={handleGoogleSignIn}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-sm transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer"
-            >
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.47 1.617l2.337-2.337C17.47 1.846 15.01 1 12.24 1c-5.522 0-10 4.478-10 10s4.478 10 10 10c5.783 0 9.613-4.06 9.613-9.78 0-.66-.06-1.29-.173-1.935H12.24z"/>
-              </svg>
-              Sign In with Google
-            </button>
+            <div className="w-full space-y-3">
+              <button
+                onClick={handleGoogleSignIn}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-sm transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer"
+              >
+                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.47 1.617l2.337-2.337C17.47 1.846 15.01 1 12.24 1c-5.522 0-10 4.478-10 10s4.478 10 10 10c5.783 0 9.613-4.06 9.613-9.78 0-.66-.06-1.29-.173-1.935H12.24z"/>
+                </svg>
+                Sign In with Google
+              </button>
+
+              <div className="relative flex py-2 items-center text-xs text-slate-500 font-mono">
+                <div className="flex-grow border-t border-white/5"></div>
+                <span className="flex-shrink mx-4">OR BYPASS AUTH</span>
+                <div className="flex-grow border-t border-white/5"></div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleAnonymousSignIn}
+                  className="py-2.5 px-3 rounded-lg bg-slate-900 border border-white/10 hover:bg-slate-850 hover:border-white/20 text-slate-300 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
+                  title="Logs in using Firebase Anonymous Mode (No Credentials)"
+                >
+                  Instant Guest (Cloud)
+                </button>
+                <button
+                  onClick={handleLocalSandbox}
+                  className="py-2.5 px-3 rounded-lg bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500/50 text-indigo-200 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
+                  title="Bypasses Firebase Auth completely, storing data in local container state"
+                >
+                  Local Offline Sandbox
+                </button>
+              </div>
+            </div>
             
           </div>
         </motion.div>

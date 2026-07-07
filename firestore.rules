@@ -20,6 +20,10 @@ service cloud firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isNumber(val) {
+      return val is int || val is float;
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -36,13 +40,13 @@ service cloud firestore {
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.college is string && data.college.size() > 0 && data.college.size() <= 200
         && data.major is string && data.major.size() > 0 && data.major.size() <= 100
-        && data.gpaGoal is number && data.gpaGoal >= 0.0 && data.gpaGoal <= 5.0
-        && data.dailyCalorieGoal is number && data.dailyCalorieGoal >= 0 && data.dailyCalorieGoal <= 10000
-        && data.dailyWaterGoal is number && data.dailyWaterGoal >= 0 && data.dailyWaterGoal <= 20000
-        && data.waterIntake is number && data.waterIntake >= 0 && data.waterIntake <= 20000
+        && isNumber(data.gpaGoal) && data.gpaGoal >= 0.0 && data.gpaGoal <= 5.0
+        && isNumber(data.dailyCalorieGoal) && data.dailyCalorieGoal >= 0 && data.dailyCalorieGoal <= 10000
+        && isNumber(data.dailyWaterGoal) && data.dailyWaterGoal >= 0 && data.dailyWaterGoal <= 20000
+        && isNumber(data.waterIntake) && data.waterIntake >= 0 && data.waterIntake <= 20000
         && data.budget is map
         && data.budget.keys().hasAll(['allowance']) && data.budget.keys().size() == 1
-        && data.budget.allowance is number && data.budget.allowance >= 0;
+        && isNumber(data.budget.allowance) && data.budget.allowance >= 0;
     }
 
     function isValidGoal(data) {
@@ -70,7 +74,7 @@ service cloud firestore {
         && data.keys().size() == 5
         && isValidId(data.id)
         && data.title is string && data.title.size() > 0 && data.title.size() <= 200
-        && data.amount is number && data.amount >= 0
+        && isNumber(data.amount) && data.amount >= 0
         && data.category is string && (data.category == 'food' || data.category == 'books' || data.category == 'transit' || data.category == 'fun' || data.category == 'other')
         && data.date is string && data.date.size() <= 50;
     }
@@ -90,7 +94,7 @@ service cloud firestore {
         && data.keys().size() == 4
         && isValidId(data.id)
         && data.name is string && data.name.size() > 0 && data.name.size() <= 200
-        && data.calories is number && data.calories >= 0
+        && isNumber(data.calories) && data.calories >= 0
         && data.type is string && (data.type == 'breakfast' || data.type == 'lunch' || data.type == 'dinner' || data.type == 'snack');
     }
 
