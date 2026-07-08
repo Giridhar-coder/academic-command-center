@@ -264,6 +264,8 @@ export default function App() {
         friendlyMessage = 'The password must be at least 6 characters.';
       } else if (err.code === 'auth/invalid-email') {
         friendlyMessage = 'The email address is invalid.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        friendlyMessage = 'Email/Password authentication is disabled in your Firebase project. See instructions below to enable it.';
       }
       setEmailAuthError(friendlyMessage);
       setAuthLoading(false);
@@ -287,6 +289,8 @@ export default function App() {
       let friendlyMessage = err.message || String(err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         friendlyMessage = 'Invalid email or password. Please verify and try again.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        friendlyMessage = 'Email/Password authentication is disabled in your Firebase project. See instructions below to enable it.';
       }
       setEmailAuthError(friendlyMessage);
       setAuthLoading(false);
@@ -641,9 +645,50 @@ export default function App() {
                     </div>
 
                     {emailAuthError && (
-                      <p className="text-[11px] text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 font-mono text-center">
-                        {emailAuthError}
-                      </p>
+                      <div className="space-y-3">
+                        <p className="text-[11px] text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 font-mono text-center">
+                          {emailAuthError}
+                        </p>
+                        
+                        {emailAuthError.includes('disabled') && (
+                          <div className="bg-slate-950/90 border border-amber-500/30 rounded-xl p-4 space-y-3 font-sans text-xs">
+                            <h4 className="text-amber-400 font-semibold flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider">
+                              🛠️ 2-Step Activation Guide Required
+                            </h4>
+                            <p className="text-slate-300 leading-relaxed text-[11px]">
+                              Whichever Firebase project you are currently connected to (default AI Studio Starter project or your custom project) needs <strong>Email/Password Sign-In</strong> manually turned on in its settings before users can log in:
+                            </p>
+                            
+                            <div className="space-y-2.5 bg-white/5 p-3 rounded-lg border border-white/5 text-[11px]">
+                              <p className="font-semibold text-slate-200">How to turn it on:</p>
+                              <ol className="list-decimal pl-4 space-y-1.5 text-slate-300">
+                                <li>
+                                  Open the <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline font-semibold">Firebase Console</a> and click on your project.
+                                </li>
+                                <li>
+                                  In the left navigation menu, go to <strong>Build</strong> &gt; <strong>Authentication</strong>.
+                                </li>
+                                <li>
+                                  Click the <strong>Sign-in method</strong> tab.
+                                </li>
+                                <li>
+                                  Click <strong>Add new provider</strong>, select <strong>Email/Password</strong>, toggle <strong>Enable</strong>, and click <strong>Save</strong>.
+                                </li>
+                              </ol>
+                            </div>
+
+                            <div className="border-t border-white/5 pt-3 space-y-2">
+                              <p className="font-semibold text-indigo-300 font-mono text-[10px] uppercase tracking-wider">🔒 Want Complete Admin Ownership?</p>
+                              <p className="text-slate-400 text-[10px] leading-relaxed">
+                                The default AI Studio Starter project is restricted (you cannot add domains or change settings there). To become the <strong>sole Owner</strong> and unlock full admin control (including whitelisting custom domains like Vercel):
+                              </p>
+                              <div className="bg-indigo-500/10 border border-indigo-500/20 p-2.5 rounded text-[10px] text-indigo-200">
+                                Click the <strong>OWNER CLOUD</strong> tab above, follow the 3-step guide to create your own free Firebase project, and link it! You will immediately get absolute owner power over your database.
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     <button
