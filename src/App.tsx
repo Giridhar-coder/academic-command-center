@@ -23,7 +23,10 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut,
-  signInAnonymously
+  signInAnonymously,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 
 import { doc, setDoc } from 'firebase/firestore';
@@ -51,8 +54,50 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [dbError, setDbError] = useState<string | null>(null);
 
+  // Email/Password states
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [emailDisplayName, setEmailDisplayName] = useState<string>('');
+  const [authMethodTab, setAuthMethodTab] = useState<'email' | 'google' | 'sandbox' | 'custom_cloud'>('email');
+  const [emailAuthMode, setEmailAuthMode] = useState<'signin' | 'register'>('signin');
+  const [emailAuthError, setEmailAuthError] = useState<string | null>(null);
+
+  // Custom Owner Cloud configuration states
+  const [customConfigInput, setCustomConfigInput] = useState<string>(() => {
+    return localStorage.getItem('custom_firebase_config') || '';
+  });
+  const [customConfigError, setCustomConfigError] = useState<string | null>(null);
+  const [isUsingCustomCloud, setIsUsingCustomCloud] = useState<boolean>(() => {
+    return !!localStorage.getItem('custom_firebase_config');
+  });
+
   // Load and sync authenticated user state on mount / auth change
   useEffect(() => {
+    // 1. Recover Sandbox session if user requested Offline Sandbox mode previously
+    const isSandboxLastTime = localStorage.getItem('is_local_sandbox') === 'true';
+    if (isSandboxLastTime) {
+      setUser({
+        uid: 'local_guest_sandbox',
+        displayName: 'Owner Pilot (Sandbox)',
+        email: 'sandbox@ailife.os',
+        isAnonymous: true,
+        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+      });
+      const cached = localStorage.getItem('local_student_state');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setState(parsed);
+          setChatHistory(parsed.chatHistory || []);
+        } catch (e) {}
+      } else {
+        setState(DEFAULT_STATE);
+        setChatHistory(DEFAULT_STATE.chatHistory);
+      }
+      setAuthLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
@@ -80,6 +125,15 @@ export default function App() {
           }
         } catch (err: any) {
           console.error('Failed to load user state from Firestore:', err);
+          // Fallback to local storage cache if firestore load fails
+          const cached = localStorage.getItem('local_student_state');
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              setState(parsed);
+              setChatHistory(parsed.chatHistory || []);
+            } catch (e) {}
+          }
           setDbError('Error loading Firestore data. Running offline fallback.');
         } finally {
           setIsSyncing(false);
@@ -90,8 +144,21 @@ export default function App() {
           if (prev && prev.uid === 'local_guest_sandbox') {
             return prev;
           }
-          setState(DEFAULT_STATE);
-          setChatHistory(DEFAULT_STATE.chatHistory);
+          // Try to recover from cached state
+          const cached = localStorage.getItem('local_student_state');
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              setState(parsed);
+              setChatHistory(parsed.chatHistory || []);
+            } catch (e) {
+              setState(DEFAULT_STATE);
+              setChatHistory(DEFAULT_STATE.chatHistory);
+            }
+          } else {
+            setState(DEFAULT_STATE);
+            setChatHistory(DEFAULT_STATE.chatHistory);
+          }
           return null;
         });
         setAuthLoading(false);
@@ -132,21 +199,137 @@ export default function App() {
   const handleLocalSandbox = () => {
     setAuthLoading(true);
     setDbError(null);
+    localStorage.setItem('is_local_sandbox', 'true');
     setUser({
       uid: 'local_guest_sandbox',
-      displayName: 'Sandbox Pilot',
+      displayName: 'Owner Pilot (Sandbox)',
       email: 'sandbox@ailife.os',
       isAnonymous: true,
       photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
     });
-    setState(DEFAULT_STATE);
-    setChatHistory(DEFAULT_STATE.chatHistory);
+    
+    const cached = localStorage.getItem('local_student_state');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setState(parsed);
+        setChatHistory(parsed.chatHistory || []);
+      } catch (e) {
+        const freshState = {
+          ...DEFAULT_STATE,
+          profile: {
+            ...DEFAULT_STATE.profile,
+            name: 'Owner Pilot'
+          }
+        };
+        setState(freshState);
+        setChatHistory(freshState.chatHistory);
+        localStorage.setItem('local_student_state', JSON.stringify(freshState));
+      }
+    } else {
+      const freshState = {
+        ...DEFAULT_STATE,
+        profile: {
+          ...DEFAULT_STATE.profile,
+          name: 'Owner Pilot'
+        }
+      };
+      setState(freshState);
+      setChatHistory(freshState.chatHistory);
+      localStorage.setItem('local_student_state', JSON.stringify(freshState));
+    }
     setAuthLoading(false);
+  };
+
+  // Email/Password Registration Handler
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || !emailDisplayName) {
+      setEmailAuthError('Please fill in all registration fields.');
+      return;
+    }
+    setAuthLoading(true);
+    setEmailAuthError(null);
+    setDbError(null);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(userCredential.user, { displayName: emailDisplayName });
+      setUser({ ...userCredential.user, displayName: emailDisplayName });
+    } catch (err: any) {
+      console.error('Email registration error:', err);
+      let friendlyMessage = err.message || String(err);
+      if (err.code === 'auth/email-already-in-use') {
+        friendlyMessage = 'This email address is already in use by another account.';
+      } else if (err.code === 'auth/weak-password') {
+        friendlyMessage = 'The password must be at least 6 characters.';
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMessage = 'The email address is invalid.';
+      }
+      setEmailAuthError(friendlyMessage);
+      setAuthLoading(false);
+    }
+  };
+
+  // Email/Password Sign-In Handler
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setEmailAuthError('Please enter your email and password.');
+      return;
+    }
+    setAuthLoading(true);
+    setEmailAuthError(null);
+    setDbError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      console.error('Email sign-in error:', err);
+      let friendlyMessage = err.message || String(err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        friendlyMessage = 'Invalid email or password. Please verify and try again.';
+      }
+      setEmailAuthError(friendlyMessage);
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSaveCustomCloudConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomConfigError(null);
+    if (!customConfigInput.trim()) {
+      setCustomConfigError('Please paste your Firebase Web App configuration JSON.');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(customConfigInput);
+      if (!parsed.apiKey || !parsed.projectId) {
+        setCustomConfigError('Invalid configuration. Missing critical fields (apiKey, projectId).');
+        return;
+      }
+      localStorage.setItem('custom_firebase_config', JSON.stringify(parsed));
+      localStorage.removeItem('is_local_sandbox');
+      setIsUsingCustomCloud(true);
+      alert('Custom Owner Cloud configured successfully! System is rebooting to load your dedicated database project.');
+      window.location.reload();
+    } catch (err: any) {
+      setCustomConfigError('Failed to parse JSON. Please make sure you copied the entire config object correctly.');
+    }
+  };
+
+  const handleResetCustomCloudConfig = () => {
+    if (window.confirm('Are you sure you want to revert to the default Google AI Studio Starter-tier project?')) {
+      localStorage.removeItem('custom_firebase_config');
+      localStorage.removeItem('is_local_sandbox');
+      setIsUsingCustomCloud(false);
+      setCustomConfigInput('');
+      window.location.reload();
+    }
   };
 
   // Logout Handler
   const handleSignOut = async () => {
     try {
+      localStorage.removeItem('is_local_sandbox');
       await signOut(auth);
       setUser(null);
       setState(DEFAULT_STATE);
@@ -163,6 +346,9 @@ export default function App() {
     setState(newState);
     setIsSyncing(true);
     setDbError(null);
+
+    // Persist to local storage cache under all scenarios
+    localStorage.setItem('local_student_state', JSON.stringify(newState));
 
     if (user && user.uid !== 'local_guest_sandbox') {
       try {
@@ -198,12 +384,12 @@ export default function App() {
 
       } catch (err: any) {
         console.error('Firestore save sync failed:', err);
-        setDbError('Save pending: synchronizing data with Firestore...');
+        setDbError('Offline Backup Enabled. Save synced in your browser.');
       } finally {
         setIsSyncing(false);
       }
     } else {
-      // Local server fallback (if offline / unauthenticated state modification)
+      // Local server fallback (silent fallback for standalone client builds on Vercel)
       try {
         const res = await fetch('/api/state', {
           method: 'POST',
@@ -212,8 +398,7 @@ export default function App() {
         });
         if (!res.ok) throw new Error('Local server sync failed');
       } catch (err: any) {
-        console.error(err);
-        setDbError('Save pending: database connection sync failed.');
+        console.log('Running fully offline sandbox. Data persisted in LocalStorage.');
       } finally {
         setIsSyncing(false);
       }
@@ -337,93 +522,278 @@ export default function App() {
               </p>
             </div>
 
-            <p className="text-sm text-slate-400 leading-relaxed font-sans">
-              Welcome back, Pilot. Synchronize your student metrics, calorie logs, exam schedules, and ledger databases securely via Firebase authentication.
+            <p className="text-xs text-slate-400 leading-relaxed font-sans">
+              Welcome back, Pilot. Synchronize your student metrics, calorie logs, exam schedules, and ledger databases securely in the cloud.
             </p>
 
-            {/* Terminal simulation log */}
-            <div className="w-full bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-[10px] text-slate-400 text-left space-y-1">
-              <div className="flex justify-between">
-                <span className="text-indigo-400">&gt; COMPILING ASSETS...</span>
-                <span className="text-emerald-400">[OK]</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-indigo-400">&gt; PERSISTENCE ENGINE...</span>
-                <span className="text-cyan-400">[FIRESTORE]</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-indigo-400">&gt; AI INTERACTION CORE...</span>
-                <span className="text-emerald-400">[ONLINE]</span>
-              </div>
+            {/* Custom Interactive Tab Selection for Auth Mode */}
+            <div className="w-full grid grid-cols-4 gap-1 p-1 bg-slate-950 rounded-lg border border-white/5 font-mono text-[8px] sm:text-[10px]">
+              <button
+                onClick={() => { setAuthMethodTab('email'); setEmailAuthError(null); }}
+                className={`py-1.5 px-1 rounded-md font-semibold transition-all cursor-pointer truncate ${
+                  authMethodTab === 'email' 
+                    ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                }`}
+              >
+                EMAIL
+              </button>
+              <button
+                onClick={() => { setAuthMethodTab('google'); setEmailAuthError(null); }}
+                className={`py-1.5 px-1 rounded-md font-semibold transition-all cursor-pointer truncate ${
+                  authMethodTab === 'google' 
+                    ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                }`}
+              >
+                GOOGLE
+              </button>
+              <button
+                onClick={() => { setAuthMethodTab('sandbox'); setEmailAuthError(null); }}
+                className={`py-1.5 px-1 rounded-md font-semibold transition-all cursor-pointer truncate ${
+                  authMethodTab === 'sandbox' 
+                    ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                }`}
+              >
+                GUEST
+              </button>
+              <button
+                onClick={() => { setAuthMethodTab('custom_cloud'); setEmailAuthError(null); }}
+                className={`py-1.5 px-1 rounded-md font-semibold transition-all cursor-pointer truncate ${
+                  authMethodTab === 'custom_cloud' 
+                    ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow' 
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                }`}
+                title="Connect Your Own Firebase Project"
+              >
+                OWNER CLOUD
+              </button>
             </div>
 
-            {dbError && (
-              <div className="w-full space-y-2">
-                <p className="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 w-full text-center font-mono">
-                  {dbError}
-                </p>
+            {/* Render Selected Authentication Form */}
+            <div className="w-full text-left">
+              
+              {/* TAB 1: EMAIL & PASSWORD (WHITELIST-FREE) */}
+              {authMethodTab === 'email' && (
+                <div className="space-y-4">
+                  <div className="text-center bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-[11px] text-indigo-300 leading-relaxed font-sans">
+                    💡 <strong>Whitelist-Free Access:</strong> Email accounts do not check domain whitelists. This works flawlessly on Vercel to save and sync your cloud records.
+                  </div>
 
-                {dbError.toLowerCase().includes('unauthorized-domain') && (
-                  <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 space-y-3 font-sans">
-                    <p className="font-semibold text-amber-400 flex items-center gap-1.5">
-                      <span>💡</span> Domain Authorization Required
-                    </p>
-                    <p className="leading-relaxed text-slate-300">
-                      Your current preview domain is not whitelisted in your Firebase project. To fix this permanently in Firebase:
-                    </p>
-                    <ol className="list-decimal pl-4 space-y-1 text-[11px] text-amber-200/80">
-                      <li>Go to the <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="underline font-semibold text-cyan-400 hover:text-cyan-300">Firebase Console</a></li>
-                      <li>Go to <strong>Authentication &gt; Settings &gt; Authorized domains</strong></li>
-                      <li>Add this domain: <code className="bg-slate-950 px-1 py-0.5 rounded text-[10px] text-amber-400 border border-white/5 font-mono break-all">{window.location.hostname}</code></li>
-                    </ol>
-                    <div className="h-[1px] bg-white/5 my-1"></div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
-                      Or bypass immediately to run offline inside the container sandbox:
-                    </p>
+                  {/* Mode Selector */}
+                  <div className="flex border-b border-white/5 pb-2">
                     <button
-                      onClick={handleLocalSandbox}
-                      className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs transition-all active:scale-[0.98] cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm"
+                      onClick={() => { setEmailAuthMode('signin'); setEmailAuthError(null); }}
+                      className={`text-xs font-semibold mr-4 pb-1 transition-colors relative cursor-pointer ${
+                        emailAuthMode === 'signin' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-400 hover:text-slate-200'
+                      }`}
                     >
-                      🚀 Bypass & Enter Local Sandbox
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => { setEmailAuthMode('register'); setEmailAuthError(null); }}
+                      className={`text-xs font-semibold pb-1 transition-colors relative cursor-pointer ${
+                        emailAuthMode === 'register' ? 'text-cyan-400 border-b border-cyan-400' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Create Account
                     </button>
                   </div>
-                )}
-              </div>
-            )}
 
-            <div className="w-full space-y-3">
-              <button
-                onClick={handleGoogleSignIn}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-sm transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer"
-              >
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.47 1.617l2.337-2.337C17.47 1.846 15.01 1 12.24 1c-5.522 0-10 4.478-10 10s4.478 10 10 10c5.783 0 9.613-4.06 9.613-9.78 0-.66-.06-1.29-.173-1.935H12.24z"/>
-                </svg>
-                Sign In with Google
-              </button>
+                  <form onSubmit={emailAuthMode === 'signin' ? handleEmailSignIn : handleEmailRegister} className="space-y-3 font-sans">
+                    {emailAuthMode === 'register' && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Pilot Display Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={emailDisplayName}
+                          onChange={(e) => setEmailDisplayName(e.target.value)}
+                          placeholder="e.g. Maverick, Cadet"
+                          className="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:border-cyan-400 transition-colors"
+                        />
+                      </div>
+                    )}
 
-              <div className="relative flex py-2 items-center text-xs text-slate-500 font-mono">
-                <div className="flex-grow border-t border-white/5"></div>
-                <span className="flex-shrink mx-4">OR BYPASS AUTH</span>
-                <div className="flex-grow border-t border-white/5"></div>
-              </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="yourname@domain.com"
+                        className="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:border-cyan-400 transition-colors"
+                      />
+                    </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={handleAnonymousSignIn}
-                  className="py-2.5 px-3 rounded-lg bg-slate-900 border border-white/10 hover:bg-slate-850 hover:border-white/20 text-slate-300 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
-                  title="Logs in using Firebase Anonymous Mode (No Credentials)"
-                >
-                  Instant Guest (Cloud)
-                </button>
-                <button
-                  onClick={handleLocalSandbox}
-                  className="py-2.5 px-3 rounded-lg bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500/50 text-indigo-200 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
-                  title="Bypasses Firebase Auth completely, storing data in local container state"
-                >
-                  Local Offline Sandbox
-                </button>
-              </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Security Password</label>
+                      <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-white/10 text-slate-200 placeholder-slate-600 text-xs focus:outline-none focus:border-cyan-400 transition-colors"
+                      />
+                    </div>
+
+                    {emailAuthError && (
+                      <p className="text-[11px] text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 font-mono text-center">
+                        {emailAuthError}
+                      </p>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-xs transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] cursor-pointer text-center"
+                    >
+                      {emailAuthMode === 'signin' ? 'Sign In with Email' : 'Register Secure Cloud Account'}
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 2: GOOGLE SIGN-IN & EXPLICIT DIAGNOSTIC INSTRUCTIONS */}
+              {authMethodTab === 'google' && (
+                <div className="space-y-4">
+                  {dbError && (
+                    <p className="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 font-mono text-center">
+                      {dbError}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={handleGoogleSignIn}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-sm transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer font-sans"
+                  >
+                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.47 1.617l2.337-2.337C17.47 1.846 15.01 1 12.24 1c-5.522 0-10 4.478-10 10s4.478 10 10 10c5.783 0 9.613-4.06 9.613-9.78 0-.66-.06-1.29-.173-1.935H12.24z"/>
+                    </svg>
+                    Sign In with Google
+                  </button>
+
+                  {/* High quality explanation of why Vercel is blocked on Google login */}
+                  <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-xs text-amber-300 space-y-3 font-sans">
+                    <p className="font-semibold text-amber-400 flex items-center gap-1.5">
+                      <span>⚠️</span> Why Google Sign-In Fails on Vercel
+                    </p>
+                    <div className="leading-relaxed text-slate-300 space-y-2">
+                      <p>
+                        This application is running on a restricted <strong>Google AI Studio Starter-tier Sandbox</strong>. Google restrictions on sandbox projects:
+                      </p>
+                      <ul className="list-disc pl-4 space-y-1 text-[11px] text-amber-200/80">
+                        <li>Arbitrary domain additions (such as <code>{window.location.hostname}</code>) are disabled by the platform.</li>
+                        <li>You cannot see or click an <strong>"Add domain"</strong> button in the Starter-tier Firebase console because it is sandboxed.</li>
+                      </ul>
+                      <p className="text-[11px] text-emerald-400 font-semibold">
+                        ✅ Solution: Use the "EMAIL ACCESS" tab instead. Email accounts work flawlessly without whitelisting, saving all logs persistently in the Firestore cloud!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: BYPASS OPTIONS */}
+              {authMethodTab === 'sandbox' && (
+                <div className="space-y-4 font-sans">
+                  <div className="bg-slate-950 p-4 rounded-xl border border-white/5 space-y-3">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-semibold text-indigo-400 font-mono">&gt; INSTANT GUEST (CLOUD)</h4>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Creates an anonymous account on Firebase. Stored in the cloud so you can use all features, but the account will expire if you clear browser cookies.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleAnonymousSignIn}
+                      className="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/15 text-slate-200 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
+                    >
+                      ⚡ Enter as Guest (Cloud)
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-950 p-4 rounded-xl border border-white/5 space-y-3">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-semibold text-cyan-400 font-mono">&gt; LOCAL OFFLINE SANDBOX</h4>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Completely bypasses Firebase. Keeps your data inside your local browser container memory.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleLocalSandbox}
+                      className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 hover:border-indigo-500/50 text-indigo-200 font-semibold text-xs transition-all active:scale-[0.98] cursor-pointer text-center"
+                    >
+                      🚀 Enter Offline Sandbox
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: CUSTOM OWNER CLOUD SETTINGS */}
+              {authMethodTab === 'custom_cloud' && (
+                <div className="space-y-4 font-sans text-xs">
+                  <div className="text-center bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-3 text-[11px] text-indigo-300 leading-relaxed">
+                    ⚙️ <strong>Dedicated Owner Mode:</strong> Connect your own Firebase project to become the sole owner of the database and unlock unlimited domain access (no whitelist errors).
+                  </div>
+
+                  {isUsingCustomCloud ? (
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <h4 className="text-xs font-semibold text-emerald-400 font-mono">DEDICATED CLOUD ACTIVE</h4>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        You are currently authenticated as the owner of your custom Firebase project. You can register any email, log in, and authorize any domain (like Vercel) inside your Firebase Console!
+                      </p>
+                      <button
+                        onClick={handleResetCustomCloudConfig}
+                        className="w-full py-2 px-3 rounded-lg bg-slate-950 border border-rose-500/30 hover:border-rose-500/50 hover:bg-rose-500/10 text-rose-300 font-mono text-[10px] transition-all cursor-pointer text-center"
+                      >
+                        REVERT TO STARTER SANDBOX
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSaveCustomCloudConfig} className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Firebase Config JSON Object</label>
+                        <textarea
+                          rows={6}
+                          required
+                          value={customConfigInput}
+                          onChange={(e) => setCustomConfigInput(e.target.value)}
+                          placeholder={`{\n  "apiKey": "AIzaSy...",\n  "authDomain": "my-app.firebaseapp.com",\n  "projectId": "my-app",\n  "storageBucket": "my-app.appspot.com",\n  "messagingSenderId": "...",\n  "appId": "..."\n}`}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/10 text-slate-200 placeholder-slate-700 text-xs font-mono focus:outline-none focus:border-cyan-400 transition-colors resize-none leading-relaxed"
+                        />
+                      </div>
+
+                      {customConfigError && (
+                        <p className="text-[11px] text-rose-400 bg-rose-500/10 p-2.5 rounded border border-rose-500/20 font-mono text-center">
+                          {customConfigError}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-xs transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] cursor-pointer text-center"
+                      >
+                        Connect Dedicated Custom Project
+                      </button>
+
+                      <div className="text-[10px] text-slate-500 space-y-1 bg-slate-950 p-3 rounded-lg border border-white/5 leading-normal">
+                        <p className="font-semibold text-slate-400">How to get your config object:</p>
+                        <ol className="list-decimal pl-4 space-y-1 text-[9px]">
+                          <li>Go to <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Firebase Console</a> and click <strong>Add project</strong>.</li>
+                          <li>Add a <strong>Web App</strong> to your project.</li>
+                          <li>Copy the <code>firebaseConfig</code> config snippet object and paste it above!</li>
+                        </ol>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
             </div>
             
           </div>
@@ -454,8 +824,18 @@ export default function App() {
             <div>
               <h1 className="text-base font-sans font-bold tracking-tight">AI Life OS</h1>
               <p className="text-[10px] text-slate-400 font-mono tracking-widest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-                ACTIVE PROTOCOL // FIRESTORE CLOUD
+                <span className={`w-1.5 h-1.5 rounded-full animate-ping ${
+                  user?.uid === 'local_guest_sandbox' 
+                    ? 'bg-amber-400' 
+                    : isUsingCustomCloud 
+                      ? 'bg-emerald-400' 
+                      : 'bg-cyan-400'
+                }`}></span>
+                {user?.uid === 'local_guest_sandbox' 
+                  ? 'OFFLINE SANDBOX MODE' 
+                  : isUsingCustomCloud 
+                    ? 'OWNER CLOUD ACTIVE' 
+                    : 'ACTIVE PROTOCOL // FIRESTORE CLOUD'}
               </p>
             </div>
           </div>

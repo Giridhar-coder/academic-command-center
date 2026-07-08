@@ -5,8 +5,24 @@ import firebaseConfig from '../firebase-applet-config.json';
 import { StudentState } from './types';
 import { DEFAULT_STATE } from './initialData';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+let activeConfig = firebaseConfig;
+
+if (typeof window !== 'undefined') {
+  const customConfigStr = localStorage.getItem('custom_firebase_config');
+  if (customConfigStr) {
+    try {
+      const parsed = JSON.parse(customConfigStr);
+      if (parsed && typeof parsed === 'object' && parsed.apiKey) {
+        activeConfig = { ...firebaseConfig, ...parsed };
+      }
+    } catch (e) {
+      console.error("Failed to parse custom firebase config from localStorage", e);
+    }
+  }
+}
+
+const app = initializeApp(activeConfig);
+export const db = getFirestore(app, activeConfig.firestoreDatabaseId || (firebaseConfig as any).firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth(app);
 
 export enum OperationType {
